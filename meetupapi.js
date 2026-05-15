@@ -2,10 +2,10 @@ import axios from "axios";
 import sql from "mssql";
 let pool;
 const dbConfig = {
-  user: "db_ac864a_meetupevent_admin",
-  password: "Admin@12345",              // ✅ password here
-  server: "sql5105.site4now.net",      // ✅ server here
-  database: "db_ac864a_meetupevent",
+  user: "",
+  password: "",              // ✅ password here
+  server: "",      // ✅ server here
+  database: "",
   options: {
     encrypt: true,
     trustServerCertificate: true
