@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Event Search</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f7fb;
+      margin: 0;
+      padding: 0;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+
+    h2 {
+      text-align: center;
+      color: #333;
+    }
+
+    .search-box {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    input {
+      flex: 1;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #ccc;
+      font-size: 16px;
+    }
+
+    button {
+      padding: 12px 20px;
+      border: none;
+      background: #4CAF50;
+      color: white;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 16px;
+    }
+
+    button:hover {
+      background: #45a049;
+    }
+
+    .card {
+      background: white;
+      padding: 15px;
+      border-radius: 12px;
+      margin-bottom: 15px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+
+    .card h3 {
+      margin: 0 0 10px;
+      color: #222;
+    }
+
+    .meta {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 5px;
+    }
+
+    .link {
+      display: inline-block;
+      margin-top: 10px;
+      color: #2196F3;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    .link:hover {
+      text-decoration: underline;
+    }
+
+    .empty {
+      text-align: center;
+      color: #999;
+      margin-top: 30px;
+    }
+
+    .error {
+      text-align: center;
+      color: red;
+    }
+
+    .loading {
+      text-align: center;
+      color: #555;
+    }
+  </style>
+</head>
+
+<body>
+
+<div class="container">
+  <h2>🔍 Event Search</h2>
+
+  <div class="search-box">
+    <input type="text" id="searchBox" placeholder="Search by title or ID..." />
+    <button onclick="search()">Search</button>
+  </div>
+
+  <div id="results"></div>
+</div>
+
+<script>
+async function search() {
+  const query = document.getElementById("searchBox").value;
+  const container = document.getElementById("results");
+
+  if (!query) {
+    container.innerHTML = "<p class='empty'>Enter something to search</p>";
+    return;
+  }
+
+  container.innerHTML = "<p class='loading'>⏳ Searching...</p>";
+
+  const BASE_URL = window.location.origin;
+
+  try {
+    const res = await fetch(`${BASE_URL}/search?q=${query}`);
+    const data = await res.json();
+
+    if (data.length === 0) {
+      container.innerHTML = "<p class='empty'>No events found</p>";
+      return;
+    }
+
+    container.innerHTML = "";
+
+    data.forEach(ev => {
+      const div = document.createElement("div");
+      div.className = "card";
+
+      div.innerHTML = `
+  <h3>${ev.event_title}</h3>
+
+  ${ev.edate ? `<p><b>📅 Start:</b> ${ev.edate}</p>` : ""}
+  ${ev.EventEndDate ? `<p><b>📅 End:</b> ${ev.EventEndDate}</p>` : ""}
+
+  ${ev.address ? `<p><b>📍 Address:</b> ${ev.address}</p>` : ""}
+  ${ev.city ? `<p><b>🏙 City:</b> ${ev.city}</p>` : ""}
+  ${ev.state ? `<p><b>🗺 State:</b> ${ev.state}</p>` : ""}
+  ${ev.country ? `<p><b>🌍 Country:</b> ${ev.country}</p>` : ""}
+  ${ev.zipcode ? `<p><b>📮 Zip:</b> ${ev.zipcode}</p>` : ""}
+
+  ${ev.contact_name ? `<p><b>🏢 Organizer:</b> ${ev.contact_name}</p>` : ""}
+  ${ev.location ? `<p><b>📌 Location:</b> ${ev.location}</p>` : ""}
+
+  ${ev.fee ? `<p><b>💰 Fee:</b> ₹${ev.fee}</p>` : ""}
+  ${ev.numberOfseats ? `<p><b>🎟 Capacity:</b> ${ev.numberOfseats}</p>` : ""}
+
+  ${ev.event_type ? `<p><b>🏷 Category:</b> ${ev.event_type}</p>` : ""}
+  ${ev.event_subType ? `<p><b>🔖 Subcategory:</b> ${ev.event_subType}</p>` : ""}
+
+  ${ev.eventbriteID ? `<p><b>🆔 ID:</b> ${ev.eventbriteID}</p>` : ""}
+  ${ev.eventSource ? `<p><b>🌐 Source:</b> ${ev.eventSource}</p>` : ""}
+
+  ${ev.url ? `<a class="link" href="${ev.url}" target="_blank">View Event →</a>` : ""}
+
+  ${ev.event_desc ? `
+    <details>
+      <summary>📄 Description</summary>
+      <p>${ev.event_desc}</p>
+    </details>
+  ` : ""}
+
+  <hr/>
+`;
+
+      container.appendChild(div);
+    });
+
+  } catch (err) {
+    console.error(err);
+    container.innerHTML = "<p class='error'>❌ Failed to fetch data</p>";
+  }
+}
+</script>
+
+</body>
+</html>
