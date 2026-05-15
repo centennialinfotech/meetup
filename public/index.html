@@ -16,33 +16,43 @@
 async function search() {
   const query = document.getElementById("searchBox").value;
 
-  const res = await fetch(`http://localhost:3000/search?q=${query}`);
-  const data = await res.json();
+  // ✅ IMPORTANT: dynamic URL (works locally + Render)
+  const BASE_URL = window.location.origin;
 
-  const container = document.getElementById("results");
-  container.innerHTML = "";
+  try {
+    const res = await fetch(`${BASE_URL}/search?q=${query}`);
+    const data = await res.json();
 
-  if (data.length === 0) {
-    container.innerHTML = "<p>No results found</p>";
-    return;
+    const container = document.getElementById("results");
+    container.innerHTML = "";
+
+    if (data.length === 0) {
+      container.innerHTML = "<p>No results found</p>";
+      return;
+    }
+
+    data.forEach(ev => {
+      const div = document.createElement("div");
+
+      div.innerHTML = `
+        <h3>${ev.event_title}</h3>
+        <p><b>ID:</b> ${ev.eventbriteID}</p>
+        <p><b>Date:</b> ${ev.edate}</p>
+        <p><b>City:</b> ${ev.city}</p>
+        <p><b>State:</b> ${ev.state}</p>
+        <p><b>Address:</b> ${ev.address}</p>
+        <a href="${ev.url}" target="_blank">View Event</a>
+        <hr/>
+      `;
+
+      container.appendChild(div);
+    });
+
+  } catch (err) {
+    console.error(err);
+    document.getElementById("results").innerHTML =
+      "<p style='color:red'>❌ Failed to fetch data</p>";
   }
-
-  data.forEach(ev => {
-    const div = document.createElement("div");
-
-    div.innerHTML = `
-      <h3>${ev.event_title}</h3>
-      <p><b>ID:</b> ${ev.eventbriteID}</p>
-      <p><b>Date:</b> ${ev.edate}</p>
-      <p><b>City:</b> ${ev.city}</p>
-      <p><b>State:</b> ${ev.state}</p>
-      <p><b>Address:</b> ${ev.address}</p>
-      <a href="${ev.url}" target="_blank">View Event</a>
-      <hr/>
-    `;
-
-    container.appendChild(div);
-  });
 }
 </script>
 

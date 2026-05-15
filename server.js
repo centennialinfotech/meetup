@@ -1,15 +1,17 @@
 import dotenv from "dotenv";
 dotenv.config();
+
 import express from "express";
 import sql from "mssql";
 import cors from "cors";
-import path from "path";
+
 const app = express();
-// serve static files
-app.use(express.static("public"));
+
 app.use(cors());
 app.use(express.json());
+app.use(express.static("public")); // serve frontend
 
+// ✅ DB config
 const dbConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
@@ -24,29 +26,27 @@ const dbConfig = {
 
 let pool;
 
-// connect once
+// ✅ connect DB
 async function connectDB() {
   pool = await sql.connect(dbConfig);
   console.log("✅ DB Connected");
 }
 
-connectDB();
-
-
-// 🔍 SEARCH API
+// ✅ SEARCH API
 app.get("/search", async (req, res) => {
   try {
-    const search = req.query.q;
-
-    if (!search) {
-      return res.json([]);
+    if (!pool) {
+      return res.status(500).send("DB not ready");
     }
 
-    let request = pool.request();
-    let query = "";
+    const search = req.query.q;
+
+    if (!search) return res.json([]);
+
+    const request = pool.request();
+    let query;
 
     if (search.startsWith("evt-")) {
-      // search by ID
       request.input("id", sql.NVarChar(255), search);
 
       query = `
@@ -56,7 +56,6 @@ app.get("/search", async (req, res) => {
         ORDER BY edate DESC
       `;
     } else {
-      // search by title
       request.input("title", sql.NVarChar(4000), `%${search}%`);
 
       query = `
@@ -66,18 +65,35 @@ app.get("/search", async (req, res) => {
         ORDER BY edate DESC
       `;
     }
+
     const result = await request.query(query);
     res.json(result.recordset);
-    } catch (err) {
-     console.error(err);
-     res.status(500).send("Error");
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error");
   }
 });
+
+// ✅ health route
 app.get("/", (req, res) => {
   res.send("🚀 Event Search API is running");
 });
 
-// start server
-app.listen(3000, () => {
-  console.log("🚀 Server running on http://localhost:3000");
-});
+// ✅ START SERVER (IMPORTANT)
+async function startServer() {
+  try {
+    await connectDB();
+
+    const PORT = process.env.PORT || 3000;
+
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+
+  } catch (err) {
+    console.error("❌ Startup failed:", err);
+  }
+}
+
+startServer();
