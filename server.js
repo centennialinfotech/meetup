@@ -9,10 +9,11 @@ app.use(cors());
 app.use(express.json());
 
 const dbConfig = {
-  user: "YOUR_USER",
-  password: "YOUR_PASSWORD",
-  server: "YOUR_SERVER",
-  database: "YOUR_DB",
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  server: process.env.DB_SERVER,
+  database: process.env.DB_NAME,
+  port: 1433,
   options: {
     encrypt: true,
     trustServerCertificate: true
