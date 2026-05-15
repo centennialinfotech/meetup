@@ -44,27 +44,16 @@ app.get("/search", async (req, res) => {
     if (!search) return res.json([]);
 
     const request = pool.request();
-    let query;
 
-    if (search.startsWith("evt-")) {
-      request.input("id", sql.NVarChar(255), search);
+    request.input("search", sql.NVarChar(4000), `%${search}%`);
 
-      query = `
-        SELECT TOP 50 *
-        FROM event
-        WHERE eventbriteID = @id
-        ORDER BY edate DESC
-      `;
-    } else {
-      request.input("title", sql.NVarChar(4000), `%${search}%`);
-
-      query = `
-        SELECT TOP 50 *
-        FROM event
-        WHERE event_title LIKE @title
-        ORDER BY edate DESC
-      `;
-    }
+    const query = `
+      SELECT TOP 50 *
+      FROM event
+      WHERE event_title LIKE @search
+         OR eventbriteID LIKE @search
+      ORDER BY edate DESC
+    `;
 
     const result = await request.query(query);
     res.json(result.recordset);
