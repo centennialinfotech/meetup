@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Event Search</title>
+</head>
+<body>
+
+<h2>🔍 Search Events</h2>
+
+<input type="text" id="searchBox" placeholder="Enter title or evt-id" />
+<button onclick="search()">Search</button>
+
+<div id="results"></div>
+
+<script>
+async function search() {
+  const query = document.getElementById("searchBox").value;
+
+  const res = await fetch(`http://localhost:3000/search?q=${query}`);
+  const data = await res.json();
+
+  const container = document.getElementById("results");
+  container.innerHTML = "";
+
+  if (data.length === 0) {
+    container.innerHTML = "<p>No results found</p>";
+    return;
+  }
+
+  data.forEach(ev => {
+    const div = document.createElement("div");
+
+    div.innerHTML = `
+      <h3>${ev.event_title}</h3>
+      <p><b>ID:</b> ${ev.eventbriteID}</p>
+      <p><b>Date:</b> ${ev.edate}</p>
+      <p><b>City:</b> ${ev.city}</p>
+      <p><b>State:</b> ${ev.state}</p>
+      <p><b>Address:</b> ${ev.address}</p>
+      <a href="${ev.url}" target="_blank">View Event</a>
+      <hr/>
+    `;
+
+    container.appendChild(div);
+  });
+}
+</script>
+
+</body>
+</html>
