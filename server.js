@@ -19,7 +19,7 @@ const dbConfig = {
   database: process.env.DB_NAME,
   port: 1433,
   options: {
-    encrypt: true,
+    encrypt: fasle,
     trustServerCertificate: true
   }
 };
