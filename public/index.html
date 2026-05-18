@@ -162,7 +162,17 @@ async function search() {
   try {
     // 🔍 First search DB
     const res = await fetch(`${BASE_URL}/search?q=${query}`);
-    const data = await res.json();
+    const text = await res.text();
+
+let data;
+
+try {
+  data = JSON.parse(text);
+} catch (e) {
+  console.error("❌ Not JSON response:", text);
+  container.innerHTML += `<p class="error">❌ API returned HTML (check backend)</p>`;
+  return;
+}
 
     if (data.length > 0) {
       renderResults(data);

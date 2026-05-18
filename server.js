@@ -179,46 +179,83 @@ async function saveEvent(event) {
 }
 
 // ================= SEARCH API =================
+const TOKEN = process.env.EVENTBRITE_TOKEN;
 
-app.get("/fetch-from-eventbrite", async (req, res) => {
+async function fetchEventFullDetails(eventID) {
   try {
-    const slug = req.query.slug;
-
-    if (!slug) return res.json([]);
-
-    const locations = [
-      "online",
-      "united-states",
-      "india",
-      "united-kingdom"
-    ];
-
-    let foundEvents = [];
-
-    for (const loc of locations) {
-      const url = `https://www.eventbrite.com/d/${loc}/${slug}/`;
-
-      console.log("🌍 Fetching:", url);
-
-      const html = await fetch(url).then(r => r.text());
-
-      const ids = [...html.matchAll(/eventbrite\.com\/e\/.*?-tickets-(\d+)/g)]
-        .map(m => m[1]);
-
-      if (ids.length > 0) {
-        foundEvents = ids;
-        break;
+    // 🔹 1. Event Details
+    const eventRes = await axios.get(
+      `https://www.eventbriteapi.com/v3/events/${eventID}/`,
+      {
+        params: {
+          expand: "organizer,category,subcategory,venue",
+          token: TOKEN
+        }
       }
-    }
+    );
 
-    // ❗ Return IDs only for now
-    res.json(foundEvents);
+    const event = eventRes.data;
+
+    // 🔹 2. Ticket Info
+    const ticketRes = await axios.get(
+      `https://www.eventbriteapi.com/v3/events/${eventID}/ticket_classes/`,
+      {
+        params: { token: TOKEN }
+      }
+    );
+
+    const tickets = ticketRes.data.ticket_classes || [];
+
+    // 🔥 Extract useful fields
+    const venue = event.venue || {};
+    const address = venue.address || {};
+
+    const price = tickets.length
+      ? tickets[0].cost?.display || "Free"
+      : "Free";
+
+    return {
+      id: event.id,
+      title: event.name?.text,
+      desc: event.description?.text,
+      start: event.start?.local,
+      end: event.end?.local,
+      address: address.localized_address_display,
+      city: address.city,
+      state: address.region,
+      country: address.country,
+      zipcode: address.postal_code,
+      organizer: event.organizer?.name,
+      url: event.url,
+      category: event.category?.name,
+      subcategory: event.subcategory?.name,
+      capacity: event.capacity,
+      fee: price,
+      eventSource: "eventbrite"
+    };
 
   } catch (err) {
-    console.error(err);
-    res.json([]);
+    console.error("❌ API Error:", err.response?.status);
+    return null;
   }
-});
+}
+
+async function extractIdsFromSlug(slug) {
+  const locations = ["online", "united-states", "india", "united-kingdom"];
+
+  for (const loc of locations) {
+    const url = `https://www.eventbrite.com/d/${loc}/${slug}/`;
+
+    const html = await fetch(url).then(r => r.text());
+
+    const ids = [...html.matchAll(/eventbrite\.com\/e\/.*?-tickets-(\d+)/g)]
+      .map(m => m[1]);
+
+    if (ids.length > 0) return [...new Set(ids)];
+  }
+
+  return [];
+}
 
 // ================= START =================
 async function start() {
