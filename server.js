@@ -3,16 +3,17 @@ dotenv.config();
 
 import express from "express";
 import sql from "mssql";
-import cors from "cors";
 import axios from "axios";
+import cors from "cors";
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static("public"));
+const TOKEN = process.env.EVENTBRITE_TOKEN;
 
-// ================= DB CONFIG =================
+/* ================= DB CONFIG ================= */
 const dbConfig = {
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
@@ -27,243 +28,232 @@ const dbConfig = {
 
 let pool;
 
-// ================= CONNECT DB =================
+/* ================= CONNECT DB ================= */
 async function connectDB() {
   pool = await sql.connect(dbConfig);
   console.log("✅ DB Connected");
 }
 
-// ================= HELPERS =================
+/* ================= HELPERS ================= */
 
-// slug generator
-function createSlug(title) {
+// detect ID
+function isEventId(input) {
+  return /^\d+$/.test(input);
+}
+
+// title → slug
+function toSlug(title) {
   return title
     .toLowerCase()
+    .trim()
     .replace(/&/g, "and")
     .replace(/[^a-z0-9\s-]/g, "")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
-    .trim();
+    .replace(/^-|-$/g, "");
 }
 
-// extract IDs from listing page
+// extract IDs from HTML
 function extractEventIds(html) {
   const matches = [...html.matchAll(/eventbrite\.com\/e\/.*?-tickets-(\d+)/g)];
   return [...new Set(matches.map(m => m[1]))];
 }
 
-// simple match
-function isMatch(search, title) {
-  return title.toLowerCase().includes(search.toLowerCase());
-}
+// locations to try
+const locations = [
+  "online",
+  "united-states",
+  "india",
+  "united-kingdom"
+];
 
-// ================= FETCH FROM EVENTBRITE =================
-
-// Step 1: scrape listing pages
-async function getEventIdsFromSlug(slug) {
-  const locations = [
-    "online",
-    "united-states",
-    "india",
-    "united-kingdom",
-    "india--delhi",
-    "india--mumbai"
-  ];
-
-  let ids = [];
-
-  for (const loc of locations) {
-    for (let page = 1; page <= 3; page++) {
-      try {
-        const url = `https://www.eventbrite.com/d/${loc}/${slug}/?page=${page}`;
-
-        console.log("🌍 Fetch:", url);
-
-        const res = await axios.get(url, {
-          headers: { "User-Agent": "Mozilla/5.0" }
-        });
-
-        const found = extractEventIds(res.data);
-
-        if (found.length) {
-          console.log(`✅ Found ${found.length} IDs`);
-          ids.push(...found);
-        }
-
-      } catch (err) {
-        console.log("⚠️ Skip:", loc, page);
-      }
-    }
-  }
-
-  return [...new Set(ids)];
-}
-
-// Step 2: fetch event details
-async function getEventDetails(ids) {
-  if (!ids.length) return [];
-
-  try {
-    const res = await axios.get(
-      "https://www.eventbrite.com/api/v3/destination/events/",
-      {
-        params: {
-          event_ids: ids.join(","),
-          page_size: ids.length,
-          expand: "event_sales_status,image,primary_venue"
-        },
-        headers: {
-          "User-Agent": "Mozilla/5.0",
-          "Accept": "application/json"
-        }
-      }
-    );
-
-    return res.data?.events || [];
-
-  } catch (err) {
-    console.log("❌ API blocked");
-    return [];
-  }
-}
-
-// Step 3: save into DB
-async function saveEvent(event) {
-  try {
-    const request = pool.request();
-
-    const venue = event.primary_venue || {};
-    const addr = venue.address || {};
-
-    await request
-      .input("eventbriteID", sql.NVarChar(255), String(event.id))
-      .input("title", sql.NVarChar(4000), event.name?.text || "")
-      .input("desc", sql.NVarChar(sql.MAX), event.description?.text || null)
-      .input("start", sql.DateTime, event.start?.local || null)
-      .input("end", sql.DateTime, event.end?.local || null)
-      .input("address", sql.NVarChar(1000), addr.localized_address_display || null)
-      .input("city", sql.NVarChar(255), addr.city || null)
-      .input("state", sql.NVarChar(255), addr.region || null)
-      .input("zip", sql.NVarChar(20), addr.postal_code || null)
-      .input("org", sql.NVarChar(255), event.primary_organizer?.name || null)
-      .input("loc", sql.NVarChar(1000), venue.name || null)
-      .input("status", sql.Bit, 1)
-      .input("racc", sql.TinyInt, 0)
-      .input("url", sql.NVarChar(sql.MAX), event.url || null)
-      .input("fee", sql.Decimal(10, 2), 0)
-      .input("cat", sql.NVarChar(255), null)
-      .input("sub", sql.NVarChar(255), null)
-      .input("capacity", sql.Int, event.capacity || 0)
-      .input("country", sql.NVarChar(255), addr.country || null)
-      .input("eventSource", sql.NVarChar(255), "eventbrite")
-      .query(`
-        INSERT INTO event (
-          eventbriteID, event_title, event_desc, edate, EventEndDate,
-          address, city, state, zipcode, contact_name, location,
-          status, racc, url, fee, event_type, event_subType,
-          numberOfseats, country, eventSource
-        )
-        VALUES (
-          @eventbriteID, @title, @desc, @start, @end,
-          @address, @city, @state, @zip, @org, @loc,
-          @status, @racc, @url, @fee, @cat, @sub,
-          @capacity, @country, @eventSource
-        )
-      `);
-
-    console.log("💾 Saved:", event.name?.text);
-
-  } catch (err) {
-    console.log("⚠️ Save skipped (duplicate?)");
-  }
-}
-
-// ================= SEARCH API =================
-const TOKEN = process.env.EVENTBRITE_TOKEN;
-
-async function fetchEventFullDetails(eventID) {
-  try {
-    // 🔹 1. Event Details
-    const eventRes = await axios.get(
-      `https://www.eventbriteapi.com/v3/events/${eventID}/`,
-      {
-        params: {
-          expand: "organizer,category,subcategory,venue",
-          token: TOKEN
-        }
-      }
-    );
-
-    const event = eventRes.data;
-
-    // 🔹 2. Ticket Info
-    const ticketRes = await axios.get(
-      `https://www.eventbriteapi.com/v3/events/${eventID}/ticket_classes/`,
-      {
-        params: { token: TOKEN }
-      }
-    );
-
-    const tickets = ticketRes.data.ticket_classes || [];
-
-    // 🔥 Extract useful fields
-    const venue = event.venue || {};
-    const address = venue.address || {};
-
-    const price = tickets.length
-      ? tickets[0].cost?.display || "Free"
-      : "Free";
-
-    return {
-      id: event.id,
-      title: event.name?.text,
-      desc: event.description?.text,
-      start: event.start?.local,
-      end: event.end?.local,
-      address: address.localized_address_display,
-      city: address.city,
-      state: address.region,
-      country: address.country,
-      zipcode: address.postal_code,
-      organizer: event.organizer?.name,
-      url: event.url,
-      category: event.category?.name,
-      subcategory: event.subcategory?.name,
-      capacity: event.capacity,
-      fee: price,
-      eventSource: "eventbrite"
-    };
-
-  } catch (err) {
-    console.error("❌ API Error:", err.response?.status);
-    return null;
-  }
-}
-
+/* ================= SCRAPE IDS ================= */
 async function extractIdsFromSlug(slug) {
-  const locations = ["online", "united-states", "india", "united-kingdom"];
-
   for (const loc of locations) {
     const url = `https://www.eventbrite.com/d/${loc}/${slug}/`;
 
-    const html = await fetch(url).then(r => r.text());
+    try {
+      console.log(`🌍 Trying ${url}`);
 
-    const ids = [...html.matchAll(/eventbrite\.com\/e\/.*?-tickets-(\d+)/g)]
-      .map(m => m[1]);
+      const res = await axios.get(url, {
+        headers: { "User-Agent": "Mozilla/5.0" }
+      });
 
-    if (ids.length > 0) return [...new Set(ids)];
+      const ids = extractEventIds(res.data);
+
+      if (ids.length > 0) {
+        console.log(`✅ Found ${ids.length} IDs`);
+        return ids;
+      }
+
+    } catch (err) {
+      console.log(`❌ Failed ${loc}`);
+    }
   }
 
   return [];
 }
 
-// ================= START =================
-async function start() {
+/* ================= FETCH EVENT ================= */
+async function fetchEventFullDetails(eventID) {
+  try {
+    const [eventRes, ticketRes] = await Promise.all([
+      axios.get(
+        `https://www.eventbriteapi.com/v3/events/${eventID}/`,
+        {
+          params: {
+            expand: "organizer,category,subcategory,venue",
+            token: TOKEN
+          }
+        }
+      ),
+
+      axios.get(
+        `https://www.eventbriteapi.com/v3/events/${eventID}/ticket_classes/`,
+        {
+          params: {
+            token: TOKEN
+          }
+        }
+      )
+    ]);
+
+    const event = eventRes.data;
+    const tickets = ticketRes.data?.ticket_classes || [];
+
+    // ✅ attach tickets to event
+    event.ticket_classes = tickets;
+
+    // ✅ extract useful info (optional)
+    event.min_price = tickets.length
+      ? Math.min(...tickets.map(t => parseFloat(t.cost?.major_value || 0)))
+      : 0;
+
+    return event;
+
+  } catch (err) {
+    console.log(`❌ API failed for ${eventID}`, err.response?.status);
+    return null;
+  }
+}
+
+/* ================= SAVE TO DB ================= */
+async function saveEvent(event) {
+  try {
+    await pool.request()
+      .input("eventbriteID", sql.NVarChar(255), String(event.id))
+      .input("title", sql.NVarChar(4000), event.name?.text || "")
+      .input("desc", sql.NVarChar(sql.MAX), event.description?.text || null)
+      .input("start", sql.DateTime, event.start?.local || null)
+      .input("end", sql.DateTime, event.end?.local || null)
+      .input("address", sql.NVarChar(1000), event.venue?.address?.localized_address_display || null)
+      .input("city", sql.NVarChar(255), event.venue?.address?.city || null)
+      .input("state", sql.NVarChar(255), event.venue?.address?.region || null)
+      .input("zip", sql.NVarChar(20), event.venue?.address?.postal_code || null)
+      .input("org", sql.NVarChar(255), event.organizer?.name || null)
+      .input("loc", sql.NVarChar(1000), event.venue?.name || null)
+      .input("url", sql.NVarChar(sql.MAX), event.url || null)
+      .input("capacity", sql.Int, event.capacity || 0)
+      .input("country", sql.NVarChar(255), event.venue?.address?.country || null)
+      .input("eventSource", sql.NVarChar(255), "eventbrite")
+      .query(`
+        IF NOT EXISTS (SELECT 1 FROM event WHERE eventbriteID = @eventbriteID)
+        INSERT INTO event (
+          eventbriteID, event_title, event_desc, edate, EventEndDate,
+          address, city, state, zipcode,
+          contact_name, location, url, numberOfseats,
+          country, eventSource
+        )
+        VALUES (
+          @eventbriteID, @title, @desc, @start, @end,
+          @address, @city, @state, @zip,
+          @org, @loc, @url, @capacity,
+          @country, @eventSource
+        )
+      `);
+
+  } catch (err) {
+    console.log("⚠️ Save failed:", event.id);
+  }
+}
+
+/* ================= MAIN SEARCH API ================= */
+app.get("/search", async (req, res) => {
+  try {
+    const search = req.query.q;
+
+    if (!search) return res.json([]);
+
+    if (!pool) return res.status(500).send("DB not ready");
+
+    console.log(`🔍 Searching: ${search}`);
+
+    /* ===== 1. SEARCH DB ===== */
+    const dbRes = await pool.request()
+      .input("search", sql.NVarChar(4000), `%${search}%`)
+      .input("exactId", sql.NVarChar(255), search)
+      .query(`
+        SELECT TOP 50 *
+        FROM event
+        WHERE event_title LIKE @search
+           OR eventbriteID = @exactId
+        ORDER BY edate DESC
+      `);
+
+    if (dbRes.recordset.length > 0) {
+      console.log("✅ Found in DB");
+      return res.json(dbRes.recordset);
+    }
+
+    console.log("⚠️ Not in DB → fallback");
+
+    let events = [];
+
+    /* ===== 2. IF EVENT ID ===== */
+    if (isEventId(search)) {
+      const event = await fetchEventFullDetails(search);
+      if (event) events.push(event);
+    }
+
+    /* ===== 3. IF TITLE ===== */
+    else {
+      const slug = toSlug(search);
+      const ids = await extractIdsFromSlug(slug);
+
+      for (const id of ids) {
+        const event = await fetchEventFullDetails(id);
+        if (event) events.push(event);
+      }
+    }
+
+    if (events.length === 0) {
+      console.log("❌ Nothing found anywhere");
+      return res.json([]);
+    }
+
+    /* ===== 4. SAVE TO DB ===== */
+    for (const ev of events) {
+      await saveEvent(ev);
+    }
+
+    /* ===== 5. RETURN ===== */
+    return res.json(events);
+
+  } catch (err) {
+    console.error("❌ ERROR:", err.message);
+    res.status(500).send("Server error");
+  }
+});
+
+/* ================= START ================= */
+async function startServer() {
   await connectDB();
 
-  app.listen(3000, () => {
-    console.log("🚀 Server running on 3000");
+  const PORT = process.env.PORT || 3000;
+
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT}`);
   });
 }
 
-start();
+startServer();
