@@ -180,51 +180,43 @@ async function saveEvent(event) {
 
 // ================= SEARCH API =================
 
-app.get("/search", async (req, res) => {
+app.get("/fetch-from-eventbrite", async (req, res) => {
   try {
-    const search = req.query.q;
+    const slug = req.query.slug;
 
-    if (!search) return res.json([]);
+    if (!slug) return res.json([]);
 
-    // 🔎 STEP 1: DB SEARCH
-    const dbRes = await pool.request()
-      .input("search", sql.NVarChar(4000), `%${search}%`)
-      .query(`
-        SELECT TOP 50 *
-        FROM event
-        WHERE event_title LIKE @search
-           OR eventbriteID LIKE @search
-        ORDER BY edate DESC
-      `);
+    const locations = [
+      "online",
+      "united-states",
+      "india",
+      "united-kingdom"
+    ];
 
-    if (dbRes.recordset.length) {
-      console.log("📦 Found in DB");
-      return res.json(dbRes.recordset);
+    let foundEvents = [];
+
+    for (const loc of locations) {
+      const url = `https://www.eventbrite.com/d/${loc}/${slug}/`;
+
+      console.log("🌍 Fetching:", url);
+
+      const html = await fetch(url).then(r => r.text());
+
+      const ids = [...html.matchAll(/eventbrite\.com\/e\/.*?-tickets-(\d+)/g)]
+        .map(m => m[1]);
+
+      if (ids.length > 0) {
+        foundEvents = ids;
+        break;
+      }
     }
 
-    // 🔥 STEP 2: FETCH FROM EVENTBRITE
-    console.log("🌐 Not found → fetching...");
-
-    const slug = createSlug(search);
-
-    const ids = await getEventIdsFromSlug(slug);
-
-    const events = await getEventDetails(ids);
-
-    const matched = events.filter(e =>
-      isMatch(search, e.name?.text || "")
-    );
-
-    // 💾 SAVE
-    for (const ev of matched) {
-      await saveEvent(ev);
-    }
-
-    res.json(matched);
+    // ❗ Return IDs only for now
+    res.json(foundEvents);
 
   } catch (err) {
     console.error(err);
-    res.status(500).send("Error");
+    res.json([]);
   }
 });
 
