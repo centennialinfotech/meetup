@@ -122,63 +122,52 @@ async function search() {
     return;
   }
 
-  container.innerHTML = "<p class='loading'>⏳ Searching...</p>";
+  // 🔥 Convert title → slug
+  const slug = toEventbriteSlug(query);
+
+  // 🌍 Try multiple locations
+  const locations = [
+    "online",
+    "united-states",
+    "india",
+    "united-kingdom"
+  ];
+
+  // 🔗 Generate URLs
+  const urls = locations.map(loc =>
+    `https://www.eventbrite.com/d/${loc}/${slug}/`
+  );
+
+  // 👇 Show URLs to user
+  container.innerHTML = `
+    <p><b>🔗 Generated Search URLs:</b></p>
+    ${urls.map(u => `<a href="${u}" target="_blank">${u}</a><br>`).join("")}
+    <hr/>
+    <p class="loading">⏳ Searching database...</p>
+  `;
 
   const BASE_URL = window.location.origin;
 
   try {
+    // 🔍 First search DB
     const res = await fetch(`${BASE_URL}/search?q=${query}`);
     const data = await res.json();
 
-    if (data.length === 0) {
-      container.innerHTML = "<p class='empty'>No events found</p>";
+    if (data.length > 0) {
+      renderResults(data);
       return;
     }
 
-    container.innerHTML = "";
+    // ❌ Not found → call backend fallback (slug-based)
+    const fallback = await fetch(`${BASE_URL}/fetch-from-eventbrite?slug=${slug}`);
+    const newData = await fallback.json();
 
-    data.forEach(ev => {
-      const div = document.createElement("div");
-      div.className = "card";
+    if (newData.length === 0) {
+      container.innerHTML += `<p class='empty'>❌ No events found anywhere</p>`;
+      return;
+    }
 
-      div.innerHTML = `
-  <h3>${ev.event_title}</h3>
-
-  ${ev.edate ? `<p><b>📅 Start:</b> ${ev.edate}</p>` : ""}
-  ${ev.EventEndDate ? `<p><b>📅 End:</b> ${ev.EventEndDate}</p>` : ""}
-
-  ${ev.address ? `<p><b>📍 Address:</b> ${ev.address}</p>` : ""}
-  ${ev.city ? `<p><b>🏙 City:</b> ${ev.city}</p>` : ""}
-  ${ev.state ? `<p><b>🗺 State:</b> ${ev.state}</p>` : ""}
-  ${ev.country ? `<p><b>🌍 Country:</b> ${ev.country}</p>` : ""}
-  ${ev.zipcode ? `<p><b>📮 Zip:</b> ${ev.zipcode}</p>` : ""}
-
-  ${ev.contact_name ? `<p><b>🏢 Organizer:</b> ${ev.contact_name}</p>` : ""}
-  ${ev.location ? `<p><b>📌 Location:</b> ${ev.location}</p>` : ""}
-
-  ${ev.fee ? `<p><b>💰 Fee:</b> ₹${ev.fee}</p>` : ""}
-  ${ev.numberOfseats ? `<p><b>🎟 Capacity:</b> ${ev.numberOfseats}</p>` : ""}
-
-  ${ev.event_type ? `<p><b>🏷 Category:</b> ${ev.event_type}</p>` : ""}
-  ${ev.event_subType ? `<p><b>🔖 Subcategory:</b> ${ev.event_subType}</p>` : ""}
-
-  ${ev.eventbriteID ? `<p><b>🆔 ID:</b> ${ev.eventbriteID}</p>` : ""}
-  ${ev.eventSource ? `<p><b>🌐 Source:</b> ${ev.eventSource}</p>` : ""}
-
-  ${ev.url ? `<a class="link" href="${ev.url}" target="_blank">View Event →</a>` : ""}
-
-  ${ev.event_desc ? `
-    <details>
-      <summary>📄 Description</summary>
-      <p>${ev.event_desc}</p>
-    </details>
-  ` : ""}
-
-  <hr/>
-`;
-
-      container.appendChild(div);
-    });
+    renderResults(newData);
 
   } catch (err) {
     console.error(err);
