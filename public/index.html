@@ -151,10 +151,15 @@ async function search() {
   );
 
   // 👇 Show URLs to user
-  container.innerHTML = `
+
+
+  /*container.innerHTML = `
     <p><b>🔗 Generated Search URLs:</b></p>
     ${urls.map(u => `<a href="${u}" target="_blank">${u}</a><br>`).join("")}
     <hr/>
+    <p class="loading">⏳ Searching database...</p>
+  `;*/
+  container.innerHTML = `
     <p class="loading">⏳ Searching database...</p>
   `;
 
