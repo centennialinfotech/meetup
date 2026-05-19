@@ -63,6 +63,7 @@ function extractEventIds(html) {
 const locations = [
   "online",
   "united-states",
+  "ca--san-diego",
   "india",
   "united-kingdom"
 ];
