@@ -111,7 +111,8 @@ async function extractIdsFromSlug(slug) {
     const url = `https://www.eventbrite.com/d/${loc}/${slug}/`;
 
     try {
-      console.log(`🌍 Trying ${url}`);
+      console.log("🌍 LOCATION:", loc);
+console.log("🔗 URL:", url);
 
       const res = await axios.get(url, {
         headers: { "User-Agent": "Mozilla/5.0" }
@@ -135,6 +136,9 @@ async function extractIdsFromSlug(slug) {
 async function extractIdsFromSearch(input) {
 
   const inputNormalized = normalize(input);
+
+  console.log("🧠 extractIdsFromSearch START");
+  console.log("INPUT NORMALIZED:", inputNormalized);
 
   for (const loc of locations) {
 
@@ -203,6 +207,7 @@ async function fetchEventFullDetails(eventID) {
 /* ================= SAVE TO DB ================= */
 async function saveEvent(event) {
   try {
+
     await pool.request()
       .input("eventbriteID", sql.NVarChar(255), String(event.id))
       .input("title", sql.NVarChar(4000), event.name?.text || "")
@@ -240,23 +245,28 @@ async function saveEvent(event) {
   }
 }
 function extractEventCandidates(html) {
-
   const candidates = [];
 
-  const regex =
-    /https:\/\/www\.eventbrite\.com\/e\/([^"' ]+)-tickets-(\d+)/g;
+  // 1. existing regex (keep)
+  const regex = /eventbrite\.com\/e\/([^"' ]+)-tickets-(\d+)/g;
 
   let match;
-
   while ((match = regex.exec(html)) !== null) {
-
-    const urlSlug = match[1];
-    const id = match[2];
-
     candidates.push({
-      id,
-      slug: urlSlug,
-      normalized: normalize(urlSlug)
+      id: match[2],
+      slug: match[1],
+      normalized: normalize(match[1])
+    });
+  }
+
+  // 2. NEW: JSON embedded event list
+  const jsonRegex = /"event":{"id":"(\d+)","name":{"text":"(.*?)"/g;
+
+  while ((match = jsonRegex.exec(html)) !== null) {
+    candidates.push({
+      id: match[1],
+      slug: match[2] ? toSlug(match[2]) : "",
+      normalized: normalize(match[2] || "")
     });
   }
 
@@ -298,13 +308,27 @@ function pickBestCandidate(candidates, inputNormalized) {
   }
 
   // strict threshold
-  return bestScore >= 0.55 ? best : null;
+  return bestScore >= 0.35 ? best : null;
+}
+function scoreMatch(a, b) {
+  const aWords = new Set(a.split(" "));
+  const bWords = new Set(b.split(" "));
+
+  let match = 0;
+
+  for (const w of aWords) {
+    if (bWords.has(w)) match++;
+  }
+
+  return match / Math.max(aWords.size, bWords.size);
 }
 /* ================= MAIN SEARCH API ================= */
 /* ================= MAIN SEARCH API ================= */
 app.get("/search", async (req, res) => {
   try {
+    console.log("🔥 HIT /search API");
     const q = req.query.q;
+     console.log("INPUT QUERY:", q);
 
     if (!q || typeof q !== "string") {
       return res.status(400).json({ error: "Invalid query" });
@@ -342,7 +366,7 @@ app.get("/search", async (req, res) => {
           WHERE event_title LIKE @title
         `);
     }
-
+    console.log("🔍 DB QUERY EXECUTED");
     // ✅ FOUND IN DB
     if (dbQuery.recordset.length > 0) {
       console.log("✅ Found in DB");
