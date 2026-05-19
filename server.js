@@ -95,6 +95,38 @@ async function extractIdsFromSlug(slug) {
   return [];
 }
 
+async function extractIdsFromSearch(query) {
+
+  for (const loc of locations) {
+
+    const url =
+      `https://www.eventbrite.com/d/${loc}/all-events/?q=${encodeURIComponent(query)}`;
+
+    try {
+
+      console.log("🌍 Trying:", url);
+
+      const res = await axios.get(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0"
+        }
+      });
+
+      const ids = extractEventIds(res.data);
+
+      if (ids.length > 0) {
+        return ids;
+      }
+
+    } catch (err) {
+
+      console.log("❌ Failed:", loc);
+    }
+  }
+
+  return [];
+}
+
 /* ================= FETCH EVENT ================= */
 async function fetchEventFullDetails(eventID) {
   try {
@@ -250,15 +282,11 @@ app.get("/search", async (req, res) => {
        STEP 3 → TITLE → SCRAPE IDS
     ========================================= */
 
-    const slug = toSlug(input);
+    const ids = await extractIdsFromSearch(input);
 
-    console.log("🔗 Slug:", slug);
-
-    const ids = await extractIdsFromSlug(slug);
-
-    if (ids.length === 0) {
-      return res.json([]);
-    }
+if (ids.length === 0) {
+  return res.json([]);
+}
 
     /* =========================================
        STEP 4 → FETCH EVENT DETAILS
