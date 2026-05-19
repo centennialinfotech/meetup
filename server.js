@@ -197,8 +197,8 @@ const dbRes = await pool.request()
   .query(`
     SELECT TOP 50 *
     FROM event
-    WHERE LOWER(event_title) = LOWER(@search)
-       OR eventbriteID = @exactId
+    WHERE event_title COLLATE Latin1_General_CI_AI = @search
+   OR eventbriteID = @exactId
     ORDER BY edate DESC
   `);
 console.log("SEARCH =", cleanSearch);
@@ -239,7 +239,10 @@ if (dbRes.recordset.length > 0) {
     }
 
     /* ===== 5. RETURN ===== */
-    return res.json(events);
+    const filtered = events.filter(e =>
+  e.name?.text?.toLowerCase() === search.toLowerCase()
+);
+    return res.json(filtered);
 
   } catch (err) {
     console.error("❌ ERROR:", err.message);
