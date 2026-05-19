@@ -201,7 +201,8 @@ const dbRes = await pool.request()
        OR eventbriteID = @exactId
     ORDER BY edate DESC
   `);
-
+console.log("SEARCH =", cleanSearch);
+console.log("RESULTS =", dbRes.recordset);
 if (dbRes.recordset.length > 0) {
   return res.json(dbRes.recordset);
 }
