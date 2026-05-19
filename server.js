@@ -250,6 +250,29 @@ if (dbRes.recordset.length > 0) {
   }
 });
 
+app.get("/fetch-from-eventbrite", async (req, res) => {
+  try {
+    const slug = req.query.slug;
+
+    if (!slug) return res.json([]);
+
+    const ids = await extractIdsFromSlug(slug);
+
+    let events = [];
+
+    for (const id of ids) {
+      const event = await fetchEventFullDetails(id);
+      if (event) events.push(event);
+    }
+
+    return res.json(events);
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 /* ================= START ================= */
 async function startServer() {
   await connectDB();
