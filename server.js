@@ -55,8 +55,45 @@ function toSlug(title) {
 
 // extract IDs from HTML
 function extractEventIds(html) {
-  const matches = [...html.matchAll(/eventbrite\.com\/e\/.*?-tickets-(\d+)/g)];
-  return [...new Set(matches.map(m => m[1]))];
+
+  const ids = new Set();
+
+  /* =====================================
+     METHOD 1 → tickets URLs
+  ===================================== */
+
+  const regex1 =
+    /eventbrite\.com\/e\/[^"' ]*-tickets-(\d+)/g;
+
+  let match;
+
+  while ((match = regex1.exec(html)) !== null) {
+    ids.add(match[1]);
+  }
+
+  /* =====================================
+     METHOD 2 → event IDs inside JSON
+  ===================================== */
+
+  const regex2 =
+    /"event_id":"(\d+)"/g;
+
+  while ((match = regex2.exec(html)) !== null) {
+    ids.add(match[1]);
+  }
+
+  /* =====================================
+     METHOD 3 → numeric IDs
+  ===================================== */
+
+  const regex3 =
+    /"id":"(\d{6,})"/g;
+
+  while ((match = regex3.exec(html)) !== null) {
+    ids.add(match[1]);
+  }
+
+  return [...ids];
 }
 
 // locations to try
@@ -113,6 +150,7 @@ async function extractIdsFromSearch(query) {
       });
 
       const ids = extractEventIds(res.data);
+      console.log("IDS:", ids);
 
       if (ids.length > 0) {
         return ids;
