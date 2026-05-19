@@ -179,75 +179,37 @@ async function saveEvent(event) {
 
 /* ================= MAIN SEARCH API ================= */
 app.get("/search", async (req, res) => {
-  try {
-    const search = req.query.q;
+  const q = req.query.q;
 
-    if (!search) return res.json([]);
+  // 1. check DB first
+  const dbResult = await getFromDB(q);
 
-    if (!pool) return res.status(500).send("DB not ready");
-
-    console.log(`🔍 Searching: ${search}`);
-
-    /* ===== 1. SEARCH DB ===== */
-    const cleanSearch = search.trim();
-
-const dbRes = await pool.request()
-  .input("search", sql.NVarChar(4000), cleanSearch)
-  .input("exactId", sql.NVarChar(255), cleanSearch)
-  .query(`
-    SELECT TOP 50 *
-    FROM event
-    WHERE event_title COLLATE Latin1_General_CI_AI = @search
-   OR eventbriteID = @exactId
-    ORDER BY edate DESC
-  `);
-console.log("SEARCH =", cleanSearch);
-console.log("RESULTS =", dbRes.recordset);
-if (dbRes.recordset.length > 0) {
-  return res.json(dbRes.recordset);
-}
-
-    console.log("⚠️ Not in DB → fallback");
-
-    let events = [];
-
-    /* ===== 2. IF EVENT ID ===== */
-    if (isEventId(search)) {
-      const event = await fetchEventFullDetails(search);
-      if (event) events.push(event);
-    }
-
-    /* ===== 3. IF TITLE ===== */
-    else {
-      const slug = toSlug(search);
-      const ids = await extractIdsFromSlug(slug);
-
-      for (const id of ids) {
-        const event = await fetchEventFullDetails(id);
-        if (event) events.push(event);
-      }
-    }
-
-    if (events.length === 0) {
-      console.log("❌ Nothing found anywhere");
-      return res.json([]);
-    }
-
-    /* ===== 4. SAVE TO DB ===== */
-    for (const ev of events) {
-      await saveEvent(ev);
-    }
-
-    /* ===== 5. RETURN ===== */
-    const filtered = events.filter(e =>
-  e.name?.text?.toLowerCase() === search.toLowerCase()
-);
-    return res.json(filtered);
-
-  } catch (err) {
-    console.error("❌ ERROR:", err.message);
-    res.status(500).send("Server error");
+  // IMPORTANT: correct empty check
+  if (dbResult && dbResult.length > 0) {
+    return res.json(dbResult); // STOP HERE
   }
+
+  // 2. determine input type
+  const isEventbriteId = q.length > 10 && /^\d+$/.test(q);
+
+  let apiData;
+
+  if (isNumericId) {
+    // ID → direct Eventbrite API
+    apiData = await fetchEventById(q);
+  } else {
+    // title → scraper → slug → eventbrite search
+    const slug = toSlug(q);
+    apiData = await scrapeEvent(slug);
+  }
+
+  // 3. save into DB
+  if (apiData && apiData.length > 0) {
+    await saveToDB(apiData);
+  }
+
+  // 4. return final result
+  return res.json(apiData);
 });
 
 app.get("/fetch-from-eventbrite", async (req, res) => {
