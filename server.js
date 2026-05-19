@@ -178,6 +178,7 @@ async function saveEvent(event) {
 }
 
 /* ================= MAIN SEARCH API ================= */
+/* ================= MAIN SEARCH API ================= */
 app.get("/search", async (req, res) => {
   try {
     const q = req.query.q;
@@ -186,36 +187,110 @@ app.get("/search", async (req, res) => {
       return res.status(400).json({ error: "Invalid query" });
     }
 
-    const safeQ = q.trim();
+    const input = q.trim();
 
-    const dbResult = await getFromDB(safeQ);
+    console.log("🔍 Search:", input);
 
-    if (dbResult.length > 0) {
-      return res.json(dbResult);
-    }
+    /* =========================================
+       STEP 1 → CHECK DB FIRST
+    ========================================= */
 
-    const isId = /^\d+$/.test(safeQ);
+    let dbQuery;
 
-    let data;
+    // if numeric → search by eventbriteID
+    if (/^\d+$/.test(input)) {
 
-    if (isId) {
-      data = await fetchEventById(safeQ);
+      dbQuery = await pool.request()
+        .input("id", sql.NVarChar, input)
+        .query(`
+          SELECT * 
+          FROM event
+          WHERE eventbriteID = @id
+        `);
+
     } else {
-      const slug = toSlug(safeQ);
-      data = await scrapeEvent(slug);
+
+      // title search
+      dbQuery = await pool.request()
+        .input("title", sql.NVarChar, `%${input}%`)
+        .query(`
+          SELECT *
+          FROM event
+          WHERE event_title LIKE @title
+        `);
     }
 
-    if (data?.length) {
-      await saveToDB(data);
+    // ✅ FOUND IN DB
+    if (dbQuery.recordset.length > 0) {
+      console.log("✅ Found in DB");
+      return res.json(dbQuery.recordset);
     }
 
-    return res.json(data || []);
+    console.log("❌ Not in DB");
+
+    /* =========================================
+       STEP 2 → IF ID → DIRECT API CALL
+    ========================================= */
+
+    if (/^\d+$/.test(input)) {
+
+      const event = await fetchEventFullDetails(input);
+
+      if (!event) {
+        return res.json([]);
+      }
+
+      await saveEvent(event);
+
+      return res.json([event]);
+    }
+
+    /* =========================================
+       STEP 3 → TITLE → SCRAPE IDS
+    ========================================= */
+
+    const slug = toSlug(input);
+
+    console.log("🔗 Slug:", slug);
+
+    const ids = await extractIdsFromSlug(slug);
+
+    if (ids.length === 0) {
+      return res.json([]);
+    }
+
+    /* =========================================
+       STEP 4 → FETCH EVENT DETAILS
+    ========================================= */
+
+    const events = [];
+
+    for (const id of ids) {
+
+      const event = await fetchEventFullDetails(id);
+
+      if (event) {
+
+        events.push(event);
+
+        // save one by one
+        await saveEvent(event);
+      }
+    }
+
+    return res.json(events);
+
   } catch (err) {
-    console.error("SEARCH ERROR:", err);
-    return res.status(500).json({ error: "Internal Server Error" });
+
+    console.error("❌ SEARCH ERROR:");
+    console.error(err);
+
+    return res.status(500).json({
+      error: err.message
+    });
   }
 });
-
+/*
 app.get("/fetch-from-eventbrite", async (req, res) => {
   try {
     const slug = req.query.slug;
@@ -238,7 +313,7 @@ app.get("/fetch-from-eventbrite", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-
+*/
 /* ================= START ================= */
 async function startServer() {
   await connectDB();

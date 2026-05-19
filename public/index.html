@@ -161,7 +161,7 @@ async function search() {
 
   try {
     // 🔍 First search DB
-    const res = await fetch(`${BASE_URL}/search?q=${query}`);
+    const res = await fetch(`${BASE_URL}/search?q=${encodeURIComponent(query)}`);
     const text = await res.text();
 
 let data;
@@ -179,16 +179,12 @@ try {
       return;
     }
 
-    // ❌ Not found → call backend fallback (slug-based)
-    const fallback = await fetch(`${BASE_URL}/fetch-from-eventbrite?slug=${slug}`);
-    const newData = await fallback.json();
+    if (data.length === 0) {
+  container.innerHTML += `<p class='empty'>❌ No events found</p>`;
+  return;
+}
 
-    if (newData.length === 0) {
-      container.innerHTML += `<p class='empty'>❌ No events found anywhere</p>`;
-      return;
-    }
-
-    renderResults(newData);
+renderResults(data);
 
   } catch (err) {
     console.error(err);
