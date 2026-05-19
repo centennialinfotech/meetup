@@ -179,37 +179,41 @@ async function saveEvent(event) {
 
 /* ================= MAIN SEARCH API ================= */
 app.get("/search", async (req, res) => {
-  const q = req.query.q;
+  try {
+    const q = req.query.q;
 
-  // 1. check DB first
-  const dbResult = await getFromDB(q);
+    if (!q || typeof q !== "string") {
+      return res.status(400).json({ error: "Invalid query" });
+    }
 
-  // IMPORTANT: correct empty check
-  if (dbResult && dbResult.length > 0) {
-    return res.json(dbResult); // STOP HERE
+    const safeQ = q.trim();
+
+    const dbResult = await getFromDB(safeQ);
+
+    if (dbResult.length > 0) {
+      return res.json(dbResult);
+    }
+
+    const isId = /^\d+$/.test(safeQ);
+
+    let data;
+
+    if (isId) {
+      data = await fetchEventById(safeQ);
+    } else {
+      const slug = toSlug(safeQ);
+      data = await scrapeEvent(slug);
+    }
+
+    if (data?.length) {
+      await saveToDB(data);
+    }
+
+    return res.json(data || []);
+  } catch (err) {
+    console.error("SEARCH ERROR:", err);
+    return res.status(500).json({ error: "Internal Server Error" });
   }
-
-  // 2. determine input type
-  const isEventbriteId = q.length > 10 && /^\d+$/.test(q);
-
-  let apiData;
-
-  if (isNumericId) {
-    // ID → direct Eventbrite API
-    apiData = await fetchEventById(q);
-  } else {
-    // title → scraper → slug → eventbrite search
-    const slug = toSlug(q);
-    apiData = await scrapeEvent(slug);
-  }
-
-  // 3. save into DB
-  if (apiData && apiData.length > 0) {
-    await saveToDB(apiData);
-  }
-
-  // 4. return final result
-  return res.json(apiData);
 });
 
 app.get("/fetch-from-eventbrite", async (req, res) => {
