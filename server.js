@@ -132,33 +132,25 @@ async function extractIdsFromSlug(slug) {
   return [];
 }
 
-async function extractIdsFromSearch(query) {
+async function extractIdsFromSearch(input) {
+
+  const inputNormalized = normalize(input);
 
   for (const loc of locations) {
 
-    const url =
-      `https://www.eventbrite.com/d/${loc}/all-events/?q=${encodeURIComponent(query)}`;
+    const url = `https://www.eventbrite.com/d/${loc}/${toSlug(input)}/`;
 
-    try {
+    const res = await axios.get(url, {
+      headers: { "User-Agent": "Mozilla/5.0" }
+    });
 
-      console.log("🌍 Trying:", url);
+    const candidates = extractEventCandidates(res.data);
 
-      const res = await axios.get(url, {
-        headers: {
-          "User-Agent": "Mozilla/5.0"
-        }
-      });
+    const best = pickBestCandidate(candidates, inputNormalized);
 
-      const ids = extractEventIds(res.data);
-      console.log("IDS:", ids);
-
-      if (ids.length > 0) {
-        return ids;
-      }
-
-    } catch (err) {
-
-      console.log("❌ Failed:", loc);
+    if (best) {
+      console.log("✅ MATCH:", best);
+      return [best.id];
     }
   }
 
@@ -247,7 +239,67 @@ async function saveEvent(event) {
     console.log("⚠️ Save failed:", event.id);
   }
 }
+function extractEventCandidates(html) {
 
+  const candidates = [];
+
+  const regex =
+    /https:\/\/www\.eventbrite\.com\/e\/([^"' ]+)-tickets-(\d+)/g;
+
+  let match;
+
+  while ((match = regex.exec(html)) !== null) {
+
+    const urlSlug = match[1];
+    const id = match[2];
+
+    candidates.push({
+      id,
+      slug: urlSlug,
+      normalized: normalize(urlSlug)
+    });
+  }
+
+  return candidates;
+}
+function normalize(text) {
+  return text
+    .toLowerCase()
+    .replace(/&/g, "and")
+    .replace(/[^a-z0-9\s]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function isExactMatch(inputSlug, candidateSlug) {
+  return candidateSlug.includes(inputSlug);
+}
+function similarity(a, b) {
+
+  const aWords = a.split(" ");
+  const bWords = b.split(" ");
+
+  const matchCount = aWords.filter(w => bWords.includes(w)).length;
+
+  return matchCount / Math.max(aWords.length, bWords.length);
+}
+function pickBestCandidate(candidates, inputNormalized) {
+
+  let best = null;
+  let bestScore = 0;
+
+  for (const c of candidates) {
+
+    const score = similarity(c.normalized, inputNormalized);
+
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  }
+
+  // strict threshold
+  return bestScore >= 0.55 ? best : null;
+}
 /* ================= MAIN SEARCH API ================= */
 /* ================= MAIN SEARCH API ================= */
 app.get("/search", async (req, res) => {
