@@ -189,21 +189,22 @@ app.get("/search", async (req, res) => {
     console.log(`🔍 Searching: ${search}`);
 
     /* ===== 1. SEARCH DB ===== */
-    const dbRes = await pool.request()
-      .input("search", sql.NVarChar(4000), `%${search}%`)
-      .input("exactId", sql.NVarChar(255), search)
-      .query(`
-        SELECT TOP 50 *
-        FROM event
-        WHERE event_title LIKE @search
-           OR eventbriteID = @exactId
-        ORDER BY edate DESC
-      `);
+    const cleanSearch = search.trim();
 
-    if (dbRes.recordset.length > 0) {
-      console.log("✅ Found in DB");
-      return res.json(dbRes.recordset);
-    }
+const dbRes = await pool.request()
+  .input("search", sql.NVarChar(4000), cleanSearch)
+  .input("exactId", sql.NVarChar(255), cleanSearch)
+  .query(`
+    SELECT TOP 50 *
+    FROM event
+    WHERE LOWER(event_title) = LOWER(@search)
+       OR eventbriteID = @exactId
+    ORDER BY edate DESC
+  `);
+
+if (dbRes.recordset.length > 0) {
+  return res.json(dbRes.recordset);
+}
 
     console.log("⚠️ Not in DB → fallback");
 
